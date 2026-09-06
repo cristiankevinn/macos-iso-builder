@@ -72,6 +72,7 @@ jobs:
       - name: Build OpenCore ISO
         working-directory: opencore
         run: |
+          mkdir -p /home/runner/Desktop
           chmod +x Make_ISO.command
           ./Make_ISO.command
 
