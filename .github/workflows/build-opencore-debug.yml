@@ -76,12 +76,10 @@ jobs:
           chmod +x Make_ISO.command
           ./Make_ISO.command
 
-      - name: Find generated ISO
+      - name: Prepare generated ISO
         run: |
-          find opencore -type f -iname "*.iso" -print
-          ISO="$(find opencore -type f -iname "*.iso" | head -1)"
-          test -n "$ISO"
-          cp "$ISO" OpenCore-Tahoe-Debug.iso
+          test -f /home/runner/Desktop/LongQT-OpenCore-v0.7.iso
+          cp /home/runner/Desktop/LongQT-OpenCore-v0.7.iso OpenCore-Tahoe-Debug.iso
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
