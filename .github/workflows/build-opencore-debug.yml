@@ -1,4 +1,4 @@
-name: Build OpenCore Debug ISO
+name: Build OpenCore Debug ISO v2
 
 on:
   workflow_dispatch:
@@ -11,78 +11,122 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y git xorriso python3
+          sudo apt-get install -y git xorriso python3 mtools
 
       - name: Download LongQT OpenCore
         run: |
           git clone --depth 1 https://github.com/LongQT-sea/OpenCore-ISO.git opencore
 
-      - name: Add diagnostic boot arguments
+      - name: Extract config from BOOT.img
+        run: |
+          mkdir -p work
+          mcopy -i opencore/BOOT.img ::/EFI/OC/config.plist work/config.plist
+
+      - name: Patch actual boot config
         run: |
           python3 - <<'PY'
           import plistlib
-          import glob
-          import os
 
-          candidates = glob.glob(
-              "opencore/**/config.plist",
-              recursive=True
-          )
+          path = "work/config.plist"
+          guid = "7C436110-AB2A-4BBB-A880-FE41995C9F82"
 
-          if not candidates:
-              raise SystemExit("config.plist not found")
+          with open(path, "rb") as f:
+              config = plistlib.load(f)
 
-          print("Found:", candidates)
+          nvram = config.setdefault("NVRAM", {}).setdefault("Add", {})
+          entry = nvram.setdefault(guid, {})
 
-          for path in candidates:
-              try:
-                  with open(path, "rb") as f:
-                      config = plistlib.load(f)
-              except Exception:
-                  continue
+          old = entry.get("boot-args", "")
+          if isinstance(old, bytes):
+              old = old.decode("utf-8", errors="ignore")
 
-              nvram = config.get("NVRAM", {}).get("Add", {})
-              guid = "7C436110-AB2A-4BBB-A880-FE41995C9F82"
+          args = old.split()
 
-              if guid not in nvram:
-                  continue
+          for arg in ["-v", "debug=0x100", "keepsyms=1"]:
+              if arg not in args:
+                  args.append(arg)
 
-              old = nvram[guid].get("boot-args", "")
-              if isinstance(old, bytes):
-                  old = old.decode("utf-8", errors="ignore")
+          entry["boot-args"] = " ".join(args)
 
-              args = old.split()
+          debug = config.setdefault("Misc", {}).setdefault("Debug", {})
+          debug["AppleDebug"] = True
+          debug["ApplePanic"] = True
+          debug["DisableWatchDog"] = True
 
-              for arg in ["-v", "debug=0x100", "keepsyms=1"]:
-                  if arg not in args:
-                      args.append(arg)
+          with open(path, "wb") as f:
+              plistlib.dump(
+                  config,
+                  f,
+                  fmt=plistlib.FMT_XML,
+                  sort_keys=False
+              )
 
-              nvram[guid]["boot-args"] = " ".join(args)
-
-              with open(path, "wb") as f:
-                  plistlib.dump(config, f, fmt=plistlib.FMT_XML)
-
-              print("Modified:", path)
-              print("boot-args:", nvram[guid]["boot-args"])
-              break
-          else:
-              raise SystemExit("Compatible OpenCore config.plist not found")
+          print("boot-args:", entry["boot-args"])
+          print("AppleDebug:", debug["AppleDebug"])
+          print("ApplePanic:", debug["ApplePanic"])
+          print("DisableWatchDog:", debug["DisableWatchDog"])
           PY
 
-      - name: Build OpenCore ISO
+      - name: Write config back into BOOT.img
+        run: |
+          mcopy -o -i opencore/BOOT.img work/config.plist ::/EFI/OC/config.plist
+
+      - name: Verify actual BOOT.img config
+        run: |
+          rm -f work/verify.plist
+          mcopy -i opencore/BOOT.img ::/EFI/OC/config.plist work/verify.plist
+
+          python3 - <<'PY'
+          import plistlib
+
+          path = "work/verify.plist"
+          guid = "7C436110-AB2A-4BBB-A880-FE41995C9F82"
+
+          with open(path, "rb") as f:
+              config = plistlib.load(f)
+
+          args = (
+              config
+              .get("NVRAM", {})
+              .get("Add", {})
+              .get(guid, {})
+              .get("boot-args", "")
+          )
+
+          if isinstance(args, bytes):
+              args = args.decode("utf-8", errors="ignore")
+
+          debug = config.get("Misc", {}).get("Debug", {})
+
+          print("Verified boot-args:", args)
+          print("Verified Misc->Debug:", debug)
+
+          required = ["-v", "debug=0x100", "keepsyms=1"]
+
+          for arg in required:
+              if arg not in args:
+                  raise SystemExit(f"Missing required boot arg: {arg}")
+
+          if debug.get("DisableWatchDog") is not True:
+              raise SystemExit("DisableWatchDog is not enabled")
+
+          print("BOOT.img debug configuration verified successfully")
+          PY
+
+      - name: Build OpenCore Debug ISO
         working-directory: opencore
         run: |
           mkdir -p /home/runner/Desktop
           chmod +x Make_ISO.command
           ./Make_ISO.command
 
-      - name: Prepare generated ISO
+      - name: Prepare ISO
         run: |
           test -f /home/runner/Desktop/LongQT-OpenCore-v0.7.iso
-          cp /home/runner/Desktop/LongQT-OpenCore-v0.7.iso OpenCore-Tahoe-Debug.iso
+          cp /home/runner/Desktop/LongQT-OpenCore-v0.7.iso OpenCore-Tahoe-Debug-v2.iso
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
-          name: OpenCore-Tahoe-Debug
-          path: OpenCore-Tahoe-Debug.iso
+          name: OpenCore-Tahoe-Debug-v2
+          path: OpenCore-Tahoe-Debug-v2.iso
