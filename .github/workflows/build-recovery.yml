@@ -1,4 +1,4 @@
-name: Build Recovery ISO image
+name: Build Recovery ISO image Tahoe
 
 on:
   workflow_dispatch:
