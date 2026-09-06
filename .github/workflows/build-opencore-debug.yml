@@ -1,0 +1,89 @@
+name: Build OpenCore Debug ISO
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git xorriso python3
+
+      - name: Download LongQT OpenCore
+        run: |
+          git clone --depth 1 https://github.com/LongQT-sea/OpenCore-ISO.git opencore
+
+      - name: Add diagnostic boot arguments
+        run: |
+          python3 - <<'PY'
+          import plistlib
+          import glob
+          import os
+
+          candidates = glob.glob(
+              "opencore/**/config.plist",
+              recursive=True
+          )
+
+          if not candidates:
+              raise SystemExit("config.plist not found")
+
+          print("Found:", candidates)
+
+          for path in candidates:
+              try:
+                  with open(path, "rb") as f:
+                      config = plistlib.load(f)
+              except Exception:
+                  continue
+
+              nvram = config.get("NVRAM", {}).get("Add", {})
+              guid = "7C436110-AB2A-4BBB-A880-FE41995C9F82"
+
+              if guid not in nvram:
+                  continue
+
+              old = nvram[guid].get("boot-args", "")
+              if isinstance(old, bytes):
+                  old = old.decode("utf-8", errors="ignore")
+
+              args = old.split()
+
+              for arg in ["-v", "debug=0x100", "keepsyms=1"]:
+                  if arg not in args:
+                      args.append(arg)
+
+              nvram[guid]["boot-args"] = " ".join(args)
+
+              with open(path, "wb") as f:
+                  plistlib.dump(config, f, fmt=plistlib.FMT_XML)
+
+              print("Modified:", path)
+              print("boot-args:", nvram[guid]["boot-args"])
+              break
+          else:
+              raise SystemExit("Compatible OpenCore config.plist not found")
+          PY
+
+      - name: Build OpenCore ISO
+        working-directory: opencore
+        run: |
+          chmod +x Make_ISO.command
+          ./Make_ISO.command
+
+      - name: Find generated ISO
+        run: |
+          find opencore -type f -iname "*.iso" -print
+          ISO="$(find opencore -type f -iname "*.iso" | head -1)"
+          test -n "$ISO"
+          cp "$ISO" OpenCore-Tahoe-Debug.iso
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenCore-Tahoe-Debug
+          path: OpenCore-Tahoe-Debug.iso
