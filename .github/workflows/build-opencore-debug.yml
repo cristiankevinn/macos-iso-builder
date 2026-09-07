@@ -1,4 +1,4 @@
-name: Build OpenCore Debug ISO v2
+name: Build OpenCore Debug ISO v3
 
 on:
   workflow_dispatch:
@@ -42,7 +42,15 @@ jobs:
 
           args = old.split()
 
-          for arg in ["-v", "debug=0x100", "keepsyms=1"]:
+          required_args = [
+              "-v",
+              "debug=0x108",
+              "keepsyms=1",
+              "serial=5",
+              "msgbuf=1048576"
+          ]
+
+          for arg in required_args:
               if arg not in args:
                   args.append(arg)
 
@@ -101,16 +109,28 @@ jobs:
           print("Verified boot-args:", args)
           print("Verified Misc->Debug:", debug)
 
-          required = ["-v", "debug=0x100", "keepsyms=1"]
+          required = [
+              "-v",
+              "debug=0x108",
+              "keepsyms=1",
+              "serial=5",
+              "msgbuf=1048576"
+          ]
 
           for arg in required:
               if arg not in args:
                   raise SystemExit(f"Missing required boot arg: {arg}")
 
+          if debug.get("AppleDebug") is not True:
+              raise SystemExit("AppleDebug is not enabled")
+
+          if debug.get("ApplePanic") is not True:
+              raise SystemExit("ApplePanic is not enabled")
+
           if debug.get("DisableWatchDog") is not True:
               raise SystemExit("DisableWatchDog is not enabled")
 
-          print("BOOT.img debug configuration verified successfully")
+          print("BOOT.img debug v3 configuration verified successfully")
           PY
 
       - name: Build OpenCore Debug ISO
@@ -123,10 +143,10 @@ jobs:
       - name: Prepare ISO
         run: |
           test -f /home/runner/Desktop/LongQT-OpenCore-v0.7.iso
-          cp /home/runner/Desktop/LongQT-OpenCore-v0.7.iso OpenCore-Tahoe-Debug-v2.iso
+          cp /home/runner/Desktop/LongQT-OpenCore-v0.7.iso OpenCore-Tahoe-Debug-v3.iso
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
-          name: OpenCore-Tahoe-Debug-v2
-          path: OpenCore-Tahoe-Debug-v2.iso
+          name: OpenCore-Tahoe-Debug-v3
+          path: OpenCore-Tahoe-Debug-v3.iso
